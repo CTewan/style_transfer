@@ -7,6 +7,8 @@ from tensorflow.keras.applications import (
         vgg19
     )
 
+from tensorflow.keras.preprocessing.image import save_img, load_img
+
 ##############################################################################
 #                             Get User input                                 #
 ##############################################################################
@@ -30,7 +32,7 @@ def get_content_and_style_image_path():
         content_img_path = "Data/content_1.jpeg"
 
     if style_img_path == "":
-        style_img_path = "Data/style_1.jpeg"
+        style_img_path = "Data/style_5.jpg"
 
     while not os.path.isfile(content_img_path):
         content_img_path = input(
@@ -98,7 +100,7 @@ def get_output_dim():
     output_dim = output_dim.strip()
 
     if output_dim == "":
-        output_dim = (128, 128)
+        output_dim = (265, 200)
 
         return output_dim
 
@@ -274,12 +276,13 @@ def preprocess_image(img_path, model_name="VGG19", shape=None):
 #                               Deprocess Image                              #
 ##############################################################################
 def deprocess_image(img, mean_val):
+
     img[:, :, 0] += mean_val[2]
     img[:, :, 1] += mean_val[1]
     img[:, :, 2] += mean_val[0]
 
     img = img[:, :, ::-1]
-    img = np.clip(img, 0, 255).astime("uint8")
+    img = np.clip(img, 0, 255).astype("uint8")
 
     return img
 

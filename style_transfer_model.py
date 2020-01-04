@@ -28,10 +28,10 @@ from helper_functions import (
 ##############################################################################
 #                             Model Related                                  #
 ##############################################################################
-def _get_model(input_shape, model_name="VGG16"):
+def _get_model(input_tensor, model_name="VGG19"):
     if model_name == "VGG19":
         model = vgg19.VGG19(
-                input_shape=input_shape,
+                input_tensor=input_tensor,
                 include_top=False,
                 weights="imagenet"
             )
@@ -59,7 +59,7 @@ def _get_layers(model):
     return layers
 
 def _get_placeholder_img(shape):
-    placeholder_img = K.placeholder(shape=shape, name="placeholder")
+    placeholder_img = K.placeholder(shape=shape, name="placeholder_image")
 
     return placeholder_img
 
@@ -96,7 +96,7 @@ def _style_loss(style_img, output_img, height, width, channels):
     output_style = _gram_matrix(output_img)
 
     style_loss_numerator = K.sum(K.square(input_style - output_style)) 
-    style_loss_denominator = 4 * (channels ** 2) * (size **2)
+    style_loss_denominator = 4 * (channels ** 2) * (size ** 2)
     style_loss = style_loss_numerator / style_loss_denominator
 
     return style_loss
@@ -117,6 +117,7 @@ def _total_variation_loss(output_img, height, width):
     return variation_loss
 
 def _update_content_loss(loss, layers, content_weight):
+    print("In content loss")
     layer = layers["block5_conv2"]
     content_img = layer[0, :, :, :]
     output_img = layer[2, :, :, :]
@@ -129,6 +130,7 @@ def _update_content_loss(loss, layers, content_weight):
     return loss
 
 def _update_style_loss(loss, layers, style_weight, height, width, channels):
+    print("In style loss")
     STYLE_LAYERS = ['block1_conv1', 'block2_conv1',
                       'block3_conv1', 'block4_conv1',
                       'block5_conv1']
@@ -150,6 +152,7 @@ def _update_style_loss(loss, layers, style_weight, height, width, channels):
     return loss
 
 def _update_variation_loss(loss, output_img, variation_weight, height, width):
+    print("In variation loss")
     variation_loss = _total_variation_loss(
             output_img=output_img,
             height=height,
@@ -188,7 +191,7 @@ class Evaluator(object):
     def get_loss(self, x):
         loss, grad = _evaluate_loss_and_grad(
                 x=x,
-                function=self.get_function(),
+                function=self.function,
                 height=self.height,
                 width=self.width,
                 channels=self.channels
@@ -211,15 +214,16 @@ class Evaluator(object):
         # Given image, calculates loss and gradient
         self.function = K.function([self.output_img], self.outputs)
 
-        return self.function
+        #return self.function
 
-def _generate_image(evaluator, height, width, channels):
+def _generate_image(x, evaluator, height, width, channels, mean_val):
     ITERATIONS=20
 
-    x = np.random.uniform(0, 255, (1, height, width, channels)) - 128
+    #x = np.random.uniform(0, 255, (1, height, width, channels)) - 128
     #x = K.placeholder(shape=(1, height, width, channels))
 
     for i in range(ITERATIONS):
+        print("Start of iteration {}".format(i))
         x, loss, info = fmin_l_bfgs_b(
                 evaluator.get_loss,
                 x.flatten(),
@@ -229,8 +233,10 @@ def _generate_image(evaluator, height, width, channels):
 
         print("Loss for iteration {}: {}".format(i, loss))
 
-        output = deprocess_image(x.copy())
-        output_name = r"Output\style_img_iteration_{}.jpeg".format(i)
+        img = x.copy()
+        img = img.reshape(height, width, channels)
+        output = deprocess_image(img=img, mean_val=mean_val)
+        output_name = r"Output/style_img_iteration_{}.jpeg".format(i)
 
         save_img(img=output, img_path=output_name)
 
@@ -255,9 +261,19 @@ def main():
             shape=output_dim
         )
 
-    height = content_img.shape[1]
-    width = content_img.shape[2]
-    channels = content_img.shape[3]
+    dummy_img = preprocess_image(
+            img_path=content_img_path,
+            model_name=model_name,
+            shape=output_dim
+        )
+
+    content_img = K.variable(content_img)
+    style_img = K.variable(style_img)
+
+    content_shape = content_img.get_shape().as_list()
+    height = content_shape[1]
+    width = content_shape[2]
+    channels = content_shape[3]
     input_shape = (height, width, channels)
     output_shape = content_img.shape
     output_img = _get_placeholder_img(shape=output_shape)
@@ -270,7 +286,7 @@ def main():
             style_img=style_img,
             output_img=output_img
         )
-    model = _get_model(input_shape=input_shape, model_name=model_name)
+    model = _get_model(input_tensor=ipt, model_name=model_name)
     
     # Calculate loss
     layers = _get_layers(model=model)
@@ -305,21 +321,23 @@ def main():
     else:
         outputs.append(grads)
 
-    
-
     evaluator = Evaluator(
             height=height,
             width=width,
             channels=channels,
             output_img=output_img,
-            outputs=outputs)
+            outputs=outputs
+        )
+
+    evaluator.get_function()
 
     _generate_image(
-            #x=content_img,
+            x=dummy_img,
             evaluator=evaluator,
             height=height,
             width=width,
-            channels=channels
+            channels=channels,
+            mean_val=imagenet_mean
         )
 
 if __name__ == "__main__":
